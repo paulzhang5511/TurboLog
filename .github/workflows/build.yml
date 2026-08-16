@@ -93,7 +93,13 @@ jobs:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
       - name: Install cargo-ndk
-        uses: taiki-e/install-action@cargo-ndk
+        run: |
+          if ! command -v cargo-ndk &>/dev/null; then
+            echo "Installing cargo-ndk..."
+            cargo install cargo-ndk --locked
+          else
+            echo "cargo-ndk already installed: $(cargo-ndk --version)"
+          fi
 
       - name: Build Rust native libraries
         working-directory: rustlib
