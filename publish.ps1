@@ -1,4 +1,4 @@
-﻿param(
+param(
     [switch]$Version,
     [switch]$Clean,
     [string[]]$AbiFilters = @("arm64-v8a")
@@ -6,7 +6,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$script:SdkVersion = "1.0.0"
+$script:SdkVersion = "0.1.0"
 $RUST_PROJECT_DIR = ".\rustlib"
 $ANDROID_MODULE_JNI_DIR = ".\sdk\src\main\jniLibs"
 $AAR_SOURCE = ".\sdk\build\outputs\aar\sdk-release.aar"

@@ -5,7 +5,7 @@ RUST_PROJECT_DIR="./rustlib"
 ANDROID_MODULE_JNI_DIR="./sdk/src/main/jniLibs"
 AAR_SOURCE="./sdk/build/outputs/aar/sdk-release.aar"
 OUTPUT_DIR="./output"
-SDK_VERSION="1.0.0"
+SDK_VERSION="0.1.0"
 
 # ---------- 参数解析 ----------
 DO_CLEAN=false
