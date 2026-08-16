@@ -9,6 +9,7 @@ android {
             minorApiLevel = 1
         }
     }
+    ndkVersion = "27.0.12077973"
     defaultConfig {
         minSdk = 29
         ndk {

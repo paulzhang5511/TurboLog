@@ -16,9 +16,9 @@ jobs:
 
     env:
       CARGO_TERM_COLOR: always
-      ANDROID_NDK_VERSION: "27.3.13750724"
       ANDROID_MIN_SDK: "29"
       ANDROID_COMPILE_SDK: "36"
+      ANDROID_NDK_VERSION: "27.0.12077973"
 
     steps:
       - name: Checkout repository
@@ -48,44 +48,55 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Install Android NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
-          add-to-path: false
-
-      - name: Accept Android SDK licenses
+      - name: Setup Android SDK
         run: |
-          # GitHub Actions ubuntu-latest usually has ANDROID_HOME set
+          # Determine ANDROID_HOME
           if [ -z "${ANDROID_HOME}" ]; then
-            echo "ANDROID_HOME not set, trying default path..."
             export ANDROID_HOME=/usr/local/lib/android/sdk
           fi
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          # Also try the older path
-          yes | "$ANDROID_HOME/tools/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          echo "Android SDK licenses accepted"
 
-      - name: Configure Android SDK and NDK paths
-        run: |
-          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            # Try to find sdkmanager
+            SDKMANAGER=$(find "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -1)
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+
+          # Accept all licenses
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+
+          # Install required SDK components
+          echo "Installing Android SDK components..."
+          yes | "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;36.0.0" \
+            "cmake;3.22.1" \
+            "ndk;${ANDROID_NDK_VERSION}" \
+            > /dev/null
+
+          echo "Android SDK components installed."
+
+          # Set NDK home (side-by-side layout)
+          NDK_PATH="$ANDROID_HOME/ndk/${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
+
           # Create local.properties for AGP
-          echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${{ steps.setup-ndk.outputs.ndk-path }}" >> local.properties
-          echo "=== local.properties ==="
-          cat local.properties
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ndk.dir=$NDK_PATH" >> local.properties
+
           echo ""
-          echo "=== Environment info ==="
+          echo "=== Environment ==="
           echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}"
+          echo "ANDROID_NDK_HOME=$NDK_PATH"
           echo "Java version:"
           java -version
           echo ""
-          echo "=== NDK directory contents ==="
-          ls -la "${{ steps.setup-ndk.outputs.ndk-path }}" || true
+          echo "=== NDK directory ==="
+          ls -la "$NDK_PATH" | head -20
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -104,8 +115,14 @@ jobs:
       - name: Build Rust native libraries
         working-directory: rustlib
         run: |
+          echo "=== NDK path: $ANDROID_NDK_HOME ==="
+          echo "=== NDK toolchains ==="
+          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/" 2>/dev/null || true
+          echo ""
+          echo "Building Rust libraries for all Android targets..."
           cargo ndk \
             --platform ${{ env.ANDROID_MIN_SDK }} \
+            --ndk-home "$ANDROID_NDK_HOME" \
             --target aarch64-linux-android \
             --target armv7-linux-androideabi \
             --target x86_64-linux-android \
@@ -140,8 +157,8 @@ jobs:
           echo "=== AAR file info ==="
           ls -lh "$AAR_FILE"
           echo ""
-          echo "=== AAR contents (native libs) ==="
-          unzip -l "$AAR_FILE" | grep -E "\.so$|jni/" || true
+          echo "=== AAR native libs ==="
+          unzip -l "$AAR_FILE" | grep -E "\.so$" || echo "WARNING: No .so files found in AAR!"
           echo ""
           echo "=== All AAR entries ==="
           unzip -l "$AAR_FILE"
