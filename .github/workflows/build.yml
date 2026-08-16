@@ -122,7 +122,6 @@ jobs:
           echo "Building Rust libraries for all Android targets..."
           cargo ndk \
             --platform ${{ env.ANDROID_MIN_SDK }} \
-            --ndk-home "$ANDROID_NDK_HOME" \
             --target aarch64-linux-android \
             --target armv7-linux-androideabi \
             --target x86_64-linux-android \
