@@ -1,0 +1,16 @@
+[build]
+target = "aarch64-linux-android"
+
+# 专门针对 aarch64 Android 目标设置 16KB 页对齐
+[target.aarch64-linux-android]
+# 指定 C/C++ 编译器
+linker = "D:/software/Android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android29-clang.cmd"
+ar = "D:/software/Android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+# 如果你也支持 32 位 ARM 或者 x86_64 模拟器，可以一并加上：
+[target.armv7-linux-androideabi]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.x86_64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
