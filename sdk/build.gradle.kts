@@ -9,13 +9,11 @@ android {
             minorApiLevel = 1
         }
     }
+    ndkVersion = "27.0.12077973"
     defaultConfig {
         minSdk = 29
         ndk {
-            // 仅保留已编译 .so 的架构。
-            // 如需支持 armeabi-v7a/x86_64，先用 publish_rlog.ps1 -AbiFilters 编译对应 .so，
-            // 再将架构加入 abiFilters。
-            abiFilters.addAll(setOf("arm64-v8a"))
+            abiFilters.addAll(setOf("arm64-v8a", "armeabi-v7a", "x86_64"))
         }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -10,7 +10,14 @@ local.properties
 .idea
 
 # Rust
-rust_core/target/
+rustlib/target/
+
+# Native libs (build artifacts)
+sdk/src/main/jniLibs/
+**/build/
+
+# Build output
+output/
 
 # OS
 .DS_Store
@@ -19,6 +26,7 @@ Thumbs.db
 # IDE
 .vscode/
 *.swp
-*.swo.kotlin/
+*.swo
+.kotlin/
 /docs
 /tasks 
