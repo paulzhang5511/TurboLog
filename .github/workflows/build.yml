@@ -1,0 +1,164 @@
+name: Build AAR
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build TurboLog SDK AAR
+    runs-on: ubuntu-latest
+
+    env:
+      CARGO_TERM_COLOR: always
+      ANDROID_NDK_VERSION: "27.3.13750724"
+      ANDROID_MIN_SDK: "29"
+      ANDROID_COMPILE_SDK: "36"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rustlib/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rustlib/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+          add-to-path: false
+
+      - name: Accept Android SDK licenses
+        run: |
+          # GitHub Actions ubuntu-latest usually has ANDROID_HOME set
+          if [ -z "${ANDROID_HOME}" ]; then
+            echo "ANDROID_HOME not set, trying default path..."
+            export ANDROID_HOME=/usr/local/lib/android/sdk
+          fi
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          # Also try the older path
+          yes | "$ANDROID_HOME/tools/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          echo "Android SDK licenses accepted"
+
+      - name: Configure Android SDK and NDK paths
+        run: |
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          # Create local.properties for AGP
+          echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          echo "ndk.dir=${{ steps.setup-ndk.outputs.ndk-path }}" >> local.properties
+          echo "=== local.properties ==="
+          cat local.properties
+          echo ""
+          echo "=== Environment info ==="
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}"
+          echo "Java version:"
+          java -version
+          echo ""
+          echo "=== NDK directory contents ==="
+          ls -la "${{ steps.setup-ndk.outputs.ndk-path }}" || true
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@cargo-ndk
+
+      - name: Build Rust native libraries
+        working-directory: rustlib
+        run: |
+          cargo ndk \
+            --platform ${{ env.ANDROID_MIN_SDK }} \
+            --target aarch64-linux-android \
+            --target armv7-linux-androideabi \
+            --target x86_64-linux-android \
+            build --release
+
+      - name: Copy .so files to JNI Libs directory
+        run: |
+          JNI_DIR="sdk/src/main/jniLibs"
+          RUST_TARGET_DIR="rustlib/target"
+
+          rm -rf "$JNI_DIR"
+          mkdir -p "$JNI_DIR/arm64-v8a"
+          mkdir -p "$JNI_DIR/armeabi-v7a"
+          mkdir -p "$JNI_DIR/x86_64"
+
+          cp "$RUST_TARGET_DIR/aarch64-linux-android/release/libturbolog_sdk.so" "$JNI_DIR/arm64-v8a/"
+          cp "$RUST_TARGET_DIR/armv7-linux-androideabi/release/libturbolog_sdk.so" "$JNI_DIR/armeabi-v7a/"
+          cp "$RUST_TARGET_DIR/x86_64-linux-android/release/libturbolog_sdk.so" "$JNI_DIR/x86_64/"
+
+          echo "=== JNI Libs contents ==="
+          find "$JNI_DIR" -type f -name "*.so" -exec ls -lh {} \;
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build AAR with Gradle
+        run: ./gradlew :sdk:assembleRelease
+
+      - name: Verify AAR contents
+        run: |
+          AAR_FILE="sdk/build/outputs/aar/sdk-release.aar"
+          echo "=== AAR file info ==="
+          ls -lh "$AAR_FILE"
+          echo ""
+          echo "=== AAR contents (native libs) ==="
+          unzip -l "$AAR_FILE" | grep -E "\.so$|jni/" || true
+          echo ""
+          echo "=== All AAR entries ==="
+          unzip -l "$AAR_FILE"
+
+      - name: Prepare output
+        id: version
+        run: |
+          VERSION=$(grep '^version' rustlib/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          mkdir -p output
+          cp sdk/build/outputs/aar/sdk-release.aar "output/turbolog-sdk-${VERSION}.aar"
+          echo "=== Output file ==="
+          ls -lh "output/turbolog-sdk-${VERSION}.aar"
+
+      - name: Upload AAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: turbolog-sdk-${{ steps.version.outputs.version }}
+          path: output/turbolog-sdk-${{ steps.version.outputs.version }}.aar
+
+      - name: Create Release and upload AAR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output/turbolog-sdk-${{ steps.version.outputs.version }}.aar
+          generate_release_notes: true
